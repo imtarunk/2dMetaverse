@@ -38,7 +38,7 @@ router.post("/signin", async (req, res) => {
     ); // true
 
     if (isValid) {
-      const token = jwt.sign(user.id, "key");
+      const token = jwt.sign({ userId: user.id, role: user.role }, "key");
       res.status(200).json({
         message: "user logged in success",
         success: true,
