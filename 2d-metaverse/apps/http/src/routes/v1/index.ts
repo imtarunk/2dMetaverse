@@ -16,7 +16,7 @@ router.post("/signin", async (req, res) => {
 
   if (!parsed.success) {
     res
-      .status(400)
+      .status(403)
       .json({ message: "Entre a valid input and try to login in again" });
   }
 
@@ -28,7 +28,7 @@ router.post("/signin", async (req, res) => {
     });
 
     if (!user) {
-      res.status(400).json({ message: "User not found" });
+      res.status(403).json({ message: "User not found" });
       return;
     }
 
@@ -37,15 +37,15 @@ router.post("/signin", async (req, res) => {
       user.password
     ); // true
 
-    if (isValid) {
-      const token = jwt.sign({ userId: user.id, role: user.role }, "key");
-      res.status(200).json({
-        message: "user logged in success",
-        success: true,
-        token: token,
-      });
-      return;
+    if (!isValid) {
+      res.status(403).json({ message: "incorrect password" });
     }
+    const token = jwt.sign({ userId: user.id, role: user.role }, "key");
+    res.status(200).json({
+      message: "user logged in success",
+      token: token,
+    });
+    return;
   } catch (e) {
     res.status(400).json({ message: "internal server error" });
   }
@@ -53,39 +53,74 @@ router.post("/signin", async (req, res) => {
 
 router.post("/signup", async (req, res) => {
   const parsed = SignupSchema.safeParse(req.body);
-
   if (!parsed.success) {
-    res.status(400).json({ message: "validation error" });
+    console.log("Validation failed:", parsed.error);
+    res
+      .status(403)
+      .json({ message: "Validation error", errors: parsed.error.format() });
     return;
   }
 
-  const hashPassword = bcrypt.hashSync(parsed.data.password, 5);
+  const username = parsed.data?.username;
+  const existingUser = await client.user.findUnique({
+    where: { username },
+  });
+
+  if (existingUser) {
+    console.log("Username already taken");
+    res.status(400).json({ error: "Username already taken" });
+    return;
+  }
+  const hashpassword = await bcrypt.hash(parsed.data?.password, 2);
+
+  console.log("Password hashed successfully");
 
   try {
     const newUser = await client.user.create({
       data: {
-        username: parsed.data.username,
-        password: hashPassword,
+        username,
+        password: hashpassword,
         role: parsed.data.type === "admin" ? "Admin" : "User",
       },
     });
 
+    console.log("User created successfully:", newUser);
     res.status(200).json({
-      message: "user signup success",
+      message: "User signup success",
       success: true,
       userId: newUser.id,
     });
-    return;
   } catch (err) {
-    res.status(403).json({ message: "User already exists" });
-    console.log("error:" + err);
+    console.log("Error during user creation:", err);
+    res.status(500).json({ message: "Internal server error" });
+    return;
   }
 });
 
-router.get("/avaters", (req, res) => {});
+router.get("/elements", async (req, res) => {
+  const elements = await client.element.findMany();
 
-router.get("/elements", (req, res) => {});
+  res.json({
+    elements: elements.map((e) => ({
+      id: e.id,
+      imageUrl: e.imageUrl,
+      width: e.width,
+      height: e.height,
+      static: e.static,
+    })),
+  });
+});
 
+router.get("/avatars", async (req, res) => {
+  const avatars = await client.avatar.findMany();
+  res.json({
+    avatars: avatars.map((x) => ({
+      id: x.id,
+      imageUrl: x.imageUrl,
+      name: x.name,
+    })),
+  });
+});
 router.use("/user", userRouter);
 router.use("/admin", adminRouter);
 router.use("/space", spaceRouter);
